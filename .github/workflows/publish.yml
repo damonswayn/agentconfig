@@ -20,8 +20,9 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+          scope: '@shruubi'
       - run: npm ci
       - run: npm run build --if-present
       - run: npm run lint
       - run: npm test
-      - run: npm publish
+      - run: npm publish --provenance --access public
