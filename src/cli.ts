@@ -1,12 +1,11 @@
 import fs from "fs/promises";
-import path from "path";
 import { AgentConfigError, ExitCodes } from "./errors";
+import type { SyncMode } from "./types";
 import { getConfigPath, readConfig, writeConfig } from "./config";
 import { createDefaultConfig } from "./templates";
 import { getStatus } from "./status";
 import { syncConfigs } from "./sync";
 import { resolvePath } from "./paths";
-import { SyncMode } from "./types";
 
 type Command = "init" | "sync" | "status" | "doctor" | "list-agents";
 
@@ -94,7 +93,7 @@ function printHelp(): void {
   console.log(lines.join("\n"));
 }
 
-async function ensureSourceRoot(): Promise<string> {
+function ensureSourceRoot(): string {
   const envRoot = process.env.AGENTCONFIG_HOME;
   if (envRoot && envRoot.length > 0) {
     return resolvePath(envRoot, process.env);
@@ -109,7 +108,7 @@ async function run(): Promise<void> {
     return;
   }
 
-  const sourceRoot = await ensureSourceRoot();
+  const sourceRoot = ensureSourceRoot();
 
   switch (args.command) {
     case "init": {
@@ -179,7 +178,7 @@ async function run(): Promise<void> {
       return;
     }
     default:
-      throw new AgentConfigError(`Unknown command: ${args.command}`, ExitCodes.Usage);
+      throw new AgentConfigError(`Unknown command: ${String(args.command)}`, ExitCodes.Usage);
   }
 }
 

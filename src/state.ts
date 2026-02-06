@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { AgentConfigError, ExitCodes } from "./errors";
-import { SyncState } from "./types";
+import type { SyncState } from "./types";
 
 const STATE_FILE = ".sync-state.json";
 

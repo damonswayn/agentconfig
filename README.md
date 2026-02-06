@@ -51,3 +51,11 @@ Default source root is `~/.agentconfig`. Override with `AGENTCONFIG_HOME`.
 ```bash
 npm test
 ```
+
+## Linting and formatting
+
+```bash
+npm run lint
+npm run format:check
+npm run format
+```

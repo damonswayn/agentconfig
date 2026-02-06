@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import yaml from "yaml";
 import { AgentConfigError, ExitCodes } from "./errors";
-import { AgentConfigFile } from "./types";
+import type { AgentConfigFile } from "./types";
 
 export const DEFAULT_CONFIG_FILE = "agentconfig.yml";
 

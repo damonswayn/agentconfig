@@ -5,7 +5,7 @@ import { AgentConfigError, ExitCodes } from "./errors";
 import { copyFileOrDir, ensureDir, fileExists, hashFile, readLinkTarget } from "./filesystem";
 import { resolveFromRoot, resolvePath } from "./paths";
 import { readState, writeState } from "./state";
-import { AgentConfigFile, ResolvedMapping, SyncMode, SyncRecord, SyncState } from "./types";
+import type { AgentConfigFile, ResolvedMapping, SyncMode, SyncRecord, SyncState } from "./types";
 
 export interface SyncOptions {
   config: AgentConfigFile;
@@ -140,7 +140,7 @@ async function canCreateSymlink(): Promise<boolean> {
     await fs.writeFile(source, "test", "utf8");
     await fs.symlink(source, target);
     return true;
-  } catch (error) {
+  } catch (_error) {
     return false;
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
@@ -233,7 +233,7 @@ async function getTargetInfo(
       isSymlink: false,
       linkTarget: null
     };
-  } catch (error) {
+  } catch (_error) {
     return null;
   }
 }

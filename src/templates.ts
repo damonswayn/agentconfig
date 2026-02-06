@@ -1,4 +1,4 @@
-import { AgentConfigFile } from "./types";
+import type { AgentConfigFile } from "./types";
 
 export function createDefaultConfig(): AgentConfigFile {
   return {

@@ -12,16 +12,20 @@ export function expandHome(inputPath: string): string {
 }
 
 export function expandEnv(inputPath: string, env: NodeJS.ProcessEnv): string {
-  return inputPath.replace(/\$\{([A-Z0-9_]+)(:-([^}]*))?\}/gi, (_match, varName, _fallbackGroup, fallback) => {
-    const value = env[varName];
-    if (value && value.length > 0) {
-      return value;
+  const resolved = inputPath.replace(
+    /\$\{([A-Z0-9_]+)(:-([^}]*))?\}/gi,
+    (_match: string, varName: string, _fallbackGroup: string | undefined, fallback: string | undefined): string => {
+      const value = env[varName];
+      if (value && value.length > 0) {
+        return value;
+      }
+      if (fallback !== undefined) {
+        return fallback;
+      }
+      return "";
     }
-    if (fallback !== undefined) {
-      return fallback;
-    }
-    return "";
-  });
+  );
+  return resolved;
 }
 
 export function resolvePath(inputPath: string, env: NodeJS.ProcessEnv): string {
