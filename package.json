@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Sync a single agent config source to multiple coding agents",
   "license": "MIT",
+  "repository": "https://github.com/damonswayn/agentconfig",
   "type": "commonjs",
   "main": "dist/cli.js",
   "files": [
