@@ -51,6 +51,41 @@ export async function hashFile(target: string): Promise<string> {
   return hash.digest("hex");
 }
 
+export async function hashDirectory(target: string): Promise<string> {
+  const entries = await fs.readdir(target);
+  entries.sort((a, b) => a.localeCompare(b));
+  const hash = crypto.createHash("sha256");
+  for (const entry of entries) {
+    const fullPath = path.join(target, entry);
+    const stat = await fs.lstat(fullPath);
+    if (stat.isDirectory()) {
+      hash.update(`dir:${entry}:`);
+      hash.update(await hashDirectory(fullPath));
+      continue;
+    }
+    if (stat.isSymbolicLink()) {
+      const linkTarget = await fs.readlink(fullPath);
+      hash.update(`link:${entry}:${linkTarget}`);
+      continue;
+    }
+    hash.update(`file:${entry}:`);
+    hash.update(await hashFile(fullPath));
+  }
+  return hash.digest("hex");
+}
+
+export async function hashPath(target: string): Promise<string> {
+  const stat = await fs.lstat(target);
+  if (stat.isDirectory()) {
+    return await hashDirectory(target);
+  }
+  if (stat.isSymbolicLink()) {
+    const linkTarget = await fs.readlink(target);
+    return crypto.createHash("sha256").update(`link:${linkTarget}`).digest("hex");
+  }
+  return await hashFile(target);
+}
+
 export async function listEntries(target: string): Promise<string[]> {
   return await fs.readdir(target);
 }

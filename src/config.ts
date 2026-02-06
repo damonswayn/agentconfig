@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import yaml from "yaml";
 import { AgentConfigError, ExitCodes } from "./errors";
-import type { AgentConfigFile } from "./types";
+import type { AgentConfigFile, AgentConfigEntry, AgentScopeConfig, MappingFile } from "./types";
 
 export const DEFAULT_CONFIG_FILE = "agentconfig.yml";
 
@@ -12,6 +12,95 @@ export function getConfigPath(root: string): string {
 
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return typeof error === "object" && error !== null && "code" in error;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isMappingFile(value: unknown): value is MappingFile {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.source === "string" && typeof value.target === "string";
+}
+
+function isAgentScopeConfig(value: unknown): value is AgentScopeConfig {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (typeof value.root !== "string") {
+    return false;
+  }
+  if (!Array.isArray(value.files)) {
+    return false;
+  }
+  return value.files.every((entry) => isMappingFile(entry));
+}
+
+function isAgentConfigEntry(value: unknown): value is AgentConfigEntry {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (typeof value.displayName !== "string") {
+    return false;
+  }
+  if (value.global !== undefined && !isAgentScopeConfig(value.global)) {
+    return false;
+  }
+  if (value.project !== undefined && !isAgentScopeConfig(value.project)) {
+    return false;
+  }
+  return true;
+}
+
+function isAgentConfigFile(value: unknown): value is AgentConfigFile {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (typeof value.version !== "number") {
+    return false;
+  }
+  const defaults = value.defaults;
+  if (!isRecord(defaults)) {
+    return false;
+  }
+  if (defaults.mode !== "auto" && defaults.mode !== "link" && defaults.mode !== "copy") {
+    return false;
+  }
+  if (typeof defaults.profile !== "string") {
+    return false;
+  }
+  if (typeof defaults.sourceRoot !== "string") {
+    return false;
+  }
+  const agents = value.agents;
+  if (!isRecord(agents)) {
+    return false;
+  }
+  if (!Object.values(agents).every((entry) => isAgentConfigEntry(entry))) {
+    return false;
+  }
+  const profiles = value.profiles;
+  if (profiles !== undefined) {
+    if (!isRecord(profiles)) {
+      return false;
+    }
+    for (const profile of Object.values(profiles)) {
+      if (!isRecord(profile)) {
+        return false;
+      }
+      if (profile.files !== undefined) {
+        if (!Array.isArray(profile.files)) {
+          return false;
+        }
+        if (!profile.files.every((entry) => isMappingFile(entry))) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
 }
 
 function formatYamlError(error: unknown, configPath: string): AgentConfigError {
@@ -48,8 +137,11 @@ export async function readConfig(root: string): Promise<AgentConfigFile> {
   if (!parsed || typeof parsed !== "object") {
     throw new AgentConfigError(`Invalid config format in ${configPath}`, ExitCodes.Validation);
   }
+  if (!isAgentConfigFile(parsed)) {
+    throw new AgentConfigError(`Invalid config format in ${configPath}`, ExitCodes.Validation);
+  }
 
-  return parsed as AgentConfigFile;
+  return parsed;
 }
 
 export async function writeConfig(root: string, config: AgentConfigFile): Promise<void> {

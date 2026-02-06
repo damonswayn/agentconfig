@@ -15,6 +15,9 @@ export function createDefaultConfig(): AgentConfigFile {
           root: "~/.claude",
           files: [
             { source: "agent.md", target: "CLAUDE.md" },
+            { source: "claude/settings.json", target: "settings.json" },
+            { source: "claude/agents/", target: "agents/" },
+            { source: "claude/commands/", target: "commands/" },
             { source: "skills/", target: "skills/" }
           ]
         },
@@ -22,6 +25,9 @@ export function createDefaultConfig(): AgentConfigFile {
           root: "<project-root>",
           files: [
             { source: "agent.md", target: "CLAUDE.md" },
+            { source: "claude/settings.json", target: ".claude/settings.json" },
+            { source: "claude/agents/", target: ".claude/agents/" },
+            { source: "claude/commands/", target: ".claude/commands/" },
             { source: "rules/", target: ".claude/rules/" },
             { source: "skills/", target: ".claude/skills/" }
           ]
@@ -33,14 +39,14 @@ export function createDefaultConfig(): AgentConfigFile {
           root: "${CODEX_HOME:-~/.codex}",
           files: [
             { source: "agent.md", target: "AGENTS.md" },
-            { source: "skills/", target: "skills/" }
+            { source: "skills/", target: "../.agents/skills/" }
           ]
         },
         project: {
           root: "<project-root>",
           files: [
             { source: "agent.md", target: "AGENTS.md" },
-            { source: "skills/", target: ".codex/skills/" }
+            { source: "skills/", target: ".agents/skills/" }
           ]
         }
       },
@@ -48,12 +54,18 @@ export function createDefaultConfig(): AgentConfigFile {
         displayName: "Cursor",
         global: {
           root: "~/.cursor",
-          files: [{ source: "skills/", target: "skills/" }]
+          files: [
+            { source: "cursor/hooks.json", target: "hooks.json" },
+            { source: "cursor/hooks/", target: "hooks/" },
+            { source: "skills/", target: "skills/" }
+          ]
         },
         project: {
           root: "<project-root>",
           files: [
             { source: "agent.md", target: "AGENTS.md" },
+            { source: "cursor/hooks.json", target: ".cursor/hooks.json" },
+            { source: "cursor/hooks/", target: ".cursor/hooks/" },
             { source: "rules/", target: ".cursor/rules/" },
             { source: "skills/", target: ".cursor/skills/" }
           ]
@@ -65,6 +77,8 @@ export function createDefaultConfig(): AgentConfigFile {
           root: "~/.config/opencode",
           files: [
             { source: "agent.md", target: "AGENTS.md" },
+            { source: "agents/", target: "agents/" },
+            { source: "commands/", target: "commands/" },
             { source: "rules/", target: "rules/" },
             { source: "skills/", target: "skills/" }
           ]
@@ -73,6 +87,8 @@ export function createDefaultConfig(): AgentConfigFile {
           root: "<project-root>",
           files: [
             { source: "agent.md", target: "AGENTS.md" },
+            { source: "agents/", target: ".opencode/agents/" },
+            { source: "commands/", target: ".opencode/commands/" },
             { source: "rules/", target: ".opencode/rules/" },
             { source: "skills/", target: ".opencode/skills/" }
           ]

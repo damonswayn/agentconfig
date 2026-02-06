@@ -47,6 +47,15 @@ agentconfig sync
 
 Default source root is `~/.agentconfig`. Override with `AGENTCONFIG_HOME`.
 
+## Default mappings
+
+The default template includes common locations for agent instructions, rules, skills, and (where supported) agents, commands, and hooks.
+
+- Claude Code hooks are synced via `claude/settings.json`, plus agents and commands via `claude/agents/` and `claude/commands/`.
+- Codex skills are synced to `.agents/skills/` (global uses `${CODEX_HOME:-~/.codex}` root with a relative `../.agents/skills/`).
+- Cursor hooks are synced via `cursor/hooks.json` and `cursor/hooks/`.
+- OpenCode agents and commands are synced via `agents/` and `commands/`.
+
 ## Tests
 
 ```bash

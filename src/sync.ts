@@ -3,7 +3,7 @@ import os from "os";
 import path from "path";
 import { createInterface } from "readline/promises";
 import { AgentConfigError, ExitCodes } from "./errors";
-import { copyFileOrDir, ensureDir, fileExists, hashFile, readLinkTarget } from "./filesystem";
+import { copyFileOrDir, ensureDir, fileExists, hashPath, readLinkTarget } from "./filesystem";
 import { resolveFromRoot, resolvePath } from "./paths";
 import { readState, writeState } from "./state";
 import type {
@@ -47,7 +47,14 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
     agentFilter
   } = options;
   const resolvedMode = await resolveSyncMode(linkMode);
-  const resolvedMappings = resolveMappings(config, sourceRoot, mode, projectRoot, resolvedMode, agentFilter);
+  const resolvedMappings = resolveMappings(
+    config,
+    sourceRoot,
+    mode,
+    projectRoot,
+    resolvedMode,
+    agentFilter
+  );
   const warnings: string[] = [];
 
   const stateRoot = sourceRoot;
@@ -57,6 +64,7 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
   let conflictState: ConflictState = { policy: conflictPolicy ?? null, canAsk: true };
 
   for (const mapping of resolvedMappings) {
+    let allowNonEmptyDir = false;
     const targetExists = await fileExists(mapping.target);
     if (targetExists && !force && !isManaged(mapping.target, existingState)) {
       const decision = await resolveConflictPolicy(mapping.target, conflictState);
@@ -73,6 +81,10 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
         if (!dryRun) {
           await backupTarget(mapping.target, sourceRoot);
         }
+        allowNonEmptyDir = true;
+      }
+      if (decision.action === "overwrite") {
+        allowNonEmptyDir = true;
       }
     }
 
@@ -81,7 +93,7 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
     }
 
     try {
-      await applyMapping(mapping, warnings);
+      await applyMapping(mapping, warnings, { allowNonEmptyDir });
     } catch (error) {
       if (error instanceof AgentConfigError) {
         throw error;
@@ -197,7 +209,10 @@ function resolveMappings(
     let root = scopeConfig.root;
     if (mode === "project") {
       if (!projectRoot) {
-        throw new AgentConfigError("Project root is required for project mode", ExitCodes.Validation);
+        throw new AgentConfigError(
+          "Project root is required for project mode",
+          ExitCodes.Validation
+        );
       }
       root = root.replace("<project-root>", projectRoot);
     }
@@ -247,14 +262,19 @@ async function canCreateSymlink(): Promise<boolean> {
   }
 }
 
-async function applyMapping(mapping: ResolvedMapping, warnings: string[]): Promise<void> {
+async function applyMapping(
+  mapping: ResolvedMapping,
+  warnings: string[],
+  options?: { allowNonEmptyDir: boolean }
+): Promise<void> {
+  const allowNonEmptyDir = options?.allowNonEmptyDir ?? false;
   const sourceExists = await fileExists(mapping.source);
   if (!sourceExists) {
     throw new AgentConfigError(`Missing source: ${mapping.source}`, ExitCodes.Validation);
   }
 
   if (mapping.mode === "copy") {
-    await applyCopyMapping(mapping);
+    await applyCopyMapping(mapping, { allowNonEmptyDir });
     return;
   }
 
@@ -269,7 +289,7 @@ async function applyMapping(mapping: ResolvedMapping, warnings: string[]): Promi
         }
         await fs.unlink(mapping.target);
       } else if (existing.isDirectory) {
-        const removed = await removeEmptyDirectory(mapping.target);
+        const removed = await removeDirectory(mapping.target, allowNonEmptyDir);
         if (!removed) {
           throw new AgentConfigError(
             `Refusing to replace non-empty directory: ${mapping.target}`,
@@ -286,23 +306,36 @@ async function applyMapping(mapping: ResolvedMapping, warnings: string[]): Promi
       throw error;
     }
     warnings.push(`Symlink failed for ${mapping.target}; falling back to copy`);
-    await applyCopyMapping(mapping);
+    await applyCopyMapping(mapping, { allowNonEmptyDir });
   }
 }
 
-async function applyCopyMapping(mapping: ResolvedMapping): Promise<void> {
+async function applyCopyMapping(
+  mapping: ResolvedMapping,
+  options?: { allowNonEmptyDir: boolean }
+): Promise<void> {
+  const allowNonEmptyDir = options?.allowNonEmptyDir ?? false;
   const sourceStat = await fs.lstat(mapping.source);
   const existing = await getTargetInfo(mapping.target);
   if (sourceStat.isDirectory()) {
     if (existing && !existing.isDirectory) {
       await fs.unlink(mapping.target);
     }
+    if (existing?.isDirectory) {
+      const removed = await removeDirectory(mapping.target, allowNonEmptyDir);
+      if (!removed) {
+        throw new AgentConfigError(
+          `Refusing to replace non-empty directory: ${mapping.target}`,
+          ExitCodes.Filesystem
+        );
+      }
+    }
     await copyFileOrDir(mapping.source, mapping.target);
     return;
   }
 
   if (existing?.isDirectory) {
-    const removed = await removeEmptyDirectory(mapping.target);
+    const removed = await removeDirectory(mapping.target, allowNonEmptyDir);
     if (!removed) {
       throw new AgentConfigError(
         `Refusing to replace non-empty directory: ${mapping.target}`,
@@ -347,6 +380,14 @@ async function removeEmptyDirectory(target: string): Promise<boolean> {
   return true;
 }
 
+async function removeDirectory(target: string, allowNonEmptyDir: boolean): Promise<boolean> {
+  if (!allowNonEmptyDir) {
+    return await removeEmptyDirectory(target);
+  }
+  await fs.rm(target, { recursive: true, force: true });
+  return true;
+}
+
 function isManaged(target: string, state: SyncState | null): boolean {
   if (!state) {
     return false;
@@ -374,7 +415,7 @@ async function buildState(
       mode: modeValue,
       size: stat.size,
       mtimeMs: stat.mtimeMs,
-      hash: modeValue === "copy" ? await hashFile(mapping.target) : null,
+      hash: modeValue === "copy" ? await hashPath(mapping.target) : null,
       linkTarget: modeValue === "link" ? await readLinkTarget(mapping.target) : null
     };
     files[mapping.target] = record;

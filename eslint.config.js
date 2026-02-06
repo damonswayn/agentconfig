@@ -9,17 +9,51 @@ const typeCheckedConfigs = typescriptEslint.configs.recommendedTypeChecked.map((
 
 module.exports = typescriptEslint.config(
   {
-    ignores: ["dist/**", "node_modules/**"]
+    ignores: ["dist/**", "dist-test/**", "node_modules/**"]
   },
   eslintJs.configs.recommended,
   ...typeCheckedConfigs,
   {
-    files: ["**/*.ts"],
+    files: ["src/**/*.ts"],
     languageOptions: {
       parserOptions: {
         ecmaVersion: 2020,
         sourceType: "script",
         project: "./tsconfig.json"
+      }
+    },
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_"
+        }
+      ],
+      "@typescript-eslint/no-misused-promises": [
+        "error",
+        {
+          checksVoidReturn: {
+            attributes: false
+          }
+        }
+      ],
+      "@typescript-eslint/consistent-type-imports": [
+        "error",
+        {
+          prefer: "type-imports"
+        }
+      ]
+    }
+  },
+  {
+    files: ["tests/**/*.ts"],
+    languageOptions: {
+      parserOptions: {
+        ecmaVersion: 2020,
+        sourceType: "script",
+        project: "./tsconfig.test.json"
       }
     },
     rules: {

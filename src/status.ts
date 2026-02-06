@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import type { Stats } from "fs";
 import { readState } from "./state";
-import { hashFile, fileExists, readLinkTarget } from "./filesystem";
+import { hashPath, fileExists, readLinkTarget } from "./filesystem";
 
 export interface StatusEntry {
   path: string;
@@ -52,7 +52,7 @@ export async function getStatus(stateRoot: string): Promise<StatusEntry[]> {
       results.push({ path: record.path, status: "drifted", reason: "content changed" });
       continue;
     }
-    const currentHash = await hashFile(record.path);
+    const currentHash = await hashPath(record.path);
     if (currentHash !== record.hash) {
       results.push({ path: record.path, status: "drifted", reason: "content changed" });
       continue;
