@@ -17,6 +17,7 @@
     "agentconfig": "dist/cli.js"
   },
   "scripts": {
+    "clean": "node scripts/clean.js",
     "build": "tsc",
     "postbuild": "node scripts/add-shebang.js",
     "lint": "eslint . --ext .ts,.js",

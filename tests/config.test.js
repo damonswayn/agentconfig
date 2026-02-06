@@ -39,3 +39,8 @@ test("readConfig throws when config is missing", async () => {
     });
   });
 });
+
+test("build outputs dist/cli.js", async () => {
+  const cliPath = path.join(__dirname, "..", "dist", "cli.js");
+  await assert.doesNotReject(fs.access(cliPath));
+});
