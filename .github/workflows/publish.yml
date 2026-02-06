@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
           scope: "@shruubi"
       - run: npm ci
@@ -26,3 +26,5 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ""
