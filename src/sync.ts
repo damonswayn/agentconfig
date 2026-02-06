@@ -1,0 +1,290 @@
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import { AgentConfigError, ExitCodes } from "./errors";
+import { copyFileOrDir, ensureDir, fileExists, hashFile, readLinkTarget } from "./filesystem";
+import { resolveFromRoot, resolvePath } from "./paths";
+import { readState, writeState } from "./state";
+import { AgentConfigFile, ResolvedMapping, SyncMode, SyncRecord, SyncState } from "./types";
+
+export interface SyncOptions {
+  config: AgentConfigFile;
+  sourceRoot: string;
+  mode: "global" | "project";
+  projectRoot: string | null;
+  linkMode: SyncMode;
+  dryRun: boolean;
+  force: boolean;
+  agentFilter?: string;
+}
+
+export interface SyncResult {
+  planned: ResolvedMapping[];
+  updated: ResolvedMapping[];
+  skipped: ResolvedMapping[];
+  warnings: string[];
+}
+
+export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
+  const { config, sourceRoot, mode, projectRoot, linkMode, dryRun, force, agentFilter } = options;
+  const resolvedMode = await resolveSyncMode(linkMode);
+  const resolvedMappings = resolveMappings(config, sourceRoot, mode, projectRoot, resolvedMode, agentFilter);
+  const warnings: string[] = [];
+
+  const stateRoot = sourceRoot;
+  const existingState = await readState(stateRoot);
+  const updatedMappings: ResolvedMapping[] = [];
+  const skippedMappings: ResolvedMapping[] = [];
+
+  for (const mapping of resolvedMappings) {
+    const targetExists = await fileExists(mapping.target);
+    if (targetExists && !force && !isManaged(mapping.target, existingState)) {
+      warnings.push(`Skipping unmanaged target: ${mapping.target}`);
+      skippedMappings.push(mapping);
+      continue;
+    }
+
+    if (dryRun) {
+      continue;
+    }
+
+    try {
+      await applyMapping(mapping, warnings);
+    } catch (error) {
+      if (error instanceof AgentConfigError) {
+        throw error;
+      }
+      throw new AgentConfigError(`Failed to sync ${mapping.target}`, ExitCodes.Filesystem);
+    }
+
+    updatedMappings.push(mapping);
+  }
+
+  if (!dryRun) {
+    const newState = await buildState(stateRoot, mode, projectRoot, updatedMappings, existingState);
+    await writeState(stateRoot, newState);
+  }
+
+  return {
+    planned: resolvedMappings,
+    updated: updatedMappings,
+    skipped: skippedMappings,
+    warnings
+  };
+}
+
+function resolveMappings(
+  config: AgentConfigFile,
+  sourceRoot: string,
+  mode: "global" | "project",
+  projectRoot: string | null,
+  linkMode: SyncMode,
+  agentFilter?: string
+): ResolvedMapping[] {
+  const mappings: ResolvedMapping[] = [];
+  const agents = Object.entries(config.agents);
+  const profileFiles = getProfileFiles(config);
+
+  for (const [agent, agentConfig] of agents) {
+    if (agentFilter && agentFilter !== agent) {
+      continue;
+    }
+    const scopeConfig = mode === "global" ? agentConfig.global : agentConfig.project;
+    if (!scopeConfig) {
+      continue;
+    }
+
+    let root = scopeConfig.root;
+    if (mode === "project") {
+      if (!projectRoot) {
+        throw new AgentConfigError("Project root is required for project mode", ExitCodes.Validation);
+      }
+      root = root.replace("<project-root>", projectRoot);
+    }
+    const resolvedRoot = resolvePath(root, process.env);
+
+    for (const mapping of [...scopeConfig.files, ...profileFiles]) {
+      const source = resolveFromRoot(sourceRoot, mapping.source);
+      const target = resolveFromRoot(resolvedRoot, mapping.target);
+      mappings.push({
+        agent,
+        source,
+        target,
+        mode: linkMode
+      });
+    }
+  }
+
+  return mappings;
+}
+
+function getProfileFiles(config: AgentConfigFile): { source: string; target: string }[] {
+  const profileName = config.defaults.profile;
+  const profile = config.profiles?.[profileName];
+  return profile?.files ?? [];
+}
+
+async function resolveSyncMode(linkMode: SyncMode): Promise<SyncMode> {
+  if (linkMode !== "auto") {
+    return linkMode;
+  }
+  const canLink = await canCreateSymlink();
+  return canLink ? "link" : "copy";
+}
+
+async function canCreateSymlink(): Promise<boolean> {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agentconfig-"));
+  const source = path.join(tempRoot, "source");
+  const target = path.join(tempRoot, "target");
+  try {
+    await fs.writeFile(source, "test", "utf8");
+    await fs.symlink(source, target);
+    return true;
+  } catch (error) {
+    return false;
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+}
+
+async function applyMapping(mapping: ResolvedMapping, warnings: string[]): Promise<void> {
+  const sourceExists = await fileExists(mapping.source);
+  if (!sourceExists) {
+    throw new AgentConfigError(`Missing source: ${mapping.source}`, ExitCodes.Validation);
+  }
+
+  if (mapping.mode === "copy") {
+    await applyCopyMapping(mapping);
+    return;
+  }
+
+  await ensureDir(path.dirname(mapping.target));
+  try {
+    const sourceStat = await fs.lstat(mapping.source);
+    const existing = await getTargetInfo(mapping.target);
+    if (existing) {
+      if (existing.isSymlink) {
+        if (existing.linkTarget === mapping.source) {
+          return;
+        }
+        await fs.unlink(mapping.target);
+      } else if (existing.isDirectory) {
+        const removed = await removeEmptyDirectory(mapping.target);
+        if (!removed) {
+          throw new AgentConfigError(
+            `Refusing to replace non-empty directory: ${mapping.target}`,
+            ExitCodes.Filesystem
+          );
+        }
+      } else {
+        await fs.unlink(mapping.target);
+      }
+    }
+    await fs.symlink(mapping.source, mapping.target, sourceStat.isDirectory() ? "dir" : "file");
+  } catch (error) {
+    if (error instanceof AgentConfigError) {
+      throw error;
+    }
+    warnings.push(`Symlink failed for ${mapping.target}; falling back to copy`);
+    await applyCopyMapping(mapping);
+  }
+}
+
+async function applyCopyMapping(mapping: ResolvedMapping): Promise<void> {
+  const sourceStat = await fs.lstat(mapping.source);
+  const existing = await getTargetInfo(mapping.target);
+  if (sourceStat.isDirectory()) {
+    if (existing && !existing.isDirectory) {
+      await fs.unlink(mapping.target);
+    }
+    await copyFileOrDir(mapping.source, mapping.target);
+    return;
+  }
+
+  if (existing?.isDirectory) {
+    const removed = await removeEmptyDirectory(mapping.target);
+    if (!removed) {
+      throw new AgentConfigError(
+        `Refusing to replace non-empty directory: ${mapping.target}`,
+        ExitCodes.Filesystem
+      );
+    }
+  } else if (existing) {
+    await fs.unlink(mapping.target);
+  }
+
+  await copyFileOrDir(mapping.source, mapping.target);
+}
+
+async function getTargetInfo(
+  target: string
+): Promise<null | { isDirectory: boolean; isSymlink: boolean; linkTarget: string | null }> {
+  try {
+    const stat = await fs.lstat(target);
+    if (stat.isSymbolicLink()) {
+      return {
+        isDirectory: false,
+        isSymlink: true,
+        linkTarget: await readLinkTarget(target)
+      };
+    }
+    return {
+      isDirectory: stat.isDirectory(),
+      isSymlink: false,
+      linkTarget: null
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+async function removeEmptyDirectory(target: string): Promise<boolean> {
+  const entries = await fs.readdir(target);
+  if (entries.length > 0) {
+    return false;
+  }
+  await fs.rmdir(target);
+  return true;
+}
+
+function isManaged(target: string, state: SyncState | null): boolean {
+  if (!state) {
+    return false;
+  }
+  return Boolean(state.files[target]);
+}
+
+async function buildState(
+  stateRoot: string,
+  mode: "global" | "project",
+  projectRoot: string | null,
+  mappings: ResolvedMapping[],
+  previousState: SyncState | null
+): Promise<SyncState> {
+  const files: Record<string, SyncRecord> = { ...(previousState?.files ?? {}) };
+
+  for (const mapping of mappings) {
+    const stat = await fs.lstat(mapping.target);
+    const isLink = stat.isSymbolicLink();
+    const modeValue: SyncMode = isLink ? "link" : "copy";
+    const record: SyncRecord = {
+      path: mapping.target,
+      source: mapping.source,
+      agent: mapping.agent,
+      mode: modeValue,
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      hash: modeValue === "copy" ? await hashFile(mapping.target) : null,
+      linkTarget: modeValue === "link" ? await readLinkTarget(mapping.target) : null
+    };
+    files[mapping.target] = record;
+  }
+
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    mode,
+    projectRoot,
+    files
+  };
+}

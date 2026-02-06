@@ -1,0 +1,32 @@
+{
+  "name": "agentconfig",
+  "version": "0.1.0",
+  "description": "Sync a single agent config source to multiple coding agents",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/cli.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "agentconfig": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "postbuild": "node scripts/add-shebang.js",
+    "test": "npm run build && node --test",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

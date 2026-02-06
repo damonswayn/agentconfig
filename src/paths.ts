@@ -1,0 +1,40 @@
+import os from "os";
+import path from "path";
+
+export function expandHome(inputPath: string): string {
+  if (inputPath === "~") {
+    return os.homedir();
+  }
+  if (inputPath.startsWith("~/")) {
+    return path.join(os.homedir(), inputPath.slice(2));
+  }
+  return inputPath;
+}
+
+export function expandEnv(inputPath: string, env: NodeJS.ProcessEnv): string {
+  return inputPath.replace(/\$\{([A-Z0-9_]+)(:-([^}]*))?\}/gi, (_match, varName, _fallbackGroup, fallback) => {
+    const value = env[varName];
+    if (value && value.length > 0) {
+      return value;
+    }
+    if (fallback !== undefined) {
+      return fallback;
+    }
+    return "";
+  });
+}
+
+export function resolvePath(inputPath: string, env: NodeJS.ProcessEnv): string {
+  const expanded = expandHome(expandEnv(inputPath, env));
+  if (path.isAbsolute(expanded)) {
+    return expanded;
+  }
+  return path.resolve(expanded);
+}
+
+export function resolveFromRoot(root: string, relativePath: string): string {
+  if (path.isAbsolute(relativePath)) {
+    return relativePath;
+  }
+  return path.join(root, relativePath);
+}
