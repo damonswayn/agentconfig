@@ -6,6 +6,7 @@ const os = require("os");
 const { createDefaultConfig } = require("../dist/templates.js");
 const { syncConfigs } = require("../dist/sync.js");
 const { getStatus } = require("../dist/status.js");
+const { AgentConfigError, ExitCodes } = require("../dist/errors.js");
 
 async function createTempDir() {
   return await fs.mkdtemp(path.join(os.tmpdir(), "agentconfig-"));
@@ -380,5 +381,160 @@ test("sync refuses to replace non-empty directory targets", async () => {
       agentFilter: "testagent"
     }),
     /Refusing to replace non-empty directory/
+  );
+});
+
+test("sync skips unmanaged targets when conflict policy is skip", async () => {
+  const temp = await createTempDir();
+  const sourceRoot = path.join(temp, "source");
+  const targetRoot = path.join(temp, "target");
+  await fs.mkdir(sourceRoot, { recursive: true });
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  const config = createDefaultConfig();
+  config.agents.testagent = {
+    displayName: "Test",
+    global: {
+      root: targetRoot,
+      files: [{ source: "agent.md", target: "AGENTS.md" }]
+    }
+  };
+  await fs.writeFile(path.join(sourceRoot, "agent.md"), "hello", "utf8");
+  const targetPath = path.join(targetRoot, "AGENTS.md");
+  await fs.writeFile(targetPath, "existing", "utf8");
+
+  const result = await syncConfigs({
+    config,
+    sourceRoot,
+    mode: "global",
+    projectRoot: null,
+    linkMode: "copy",
+    dryRun: false,
+    force: false,
+    conflictPolicy: "skip",
+    agentFilter: "testagent"
+  });
+
+  assert.equal(result.updated.length, 0);
+  assert.equal(result.skipped.length, 1);
+  const contents = await fs.readFile(targetPath, "utf8");
+  assert.equal(contents, "existing");
+});
+
+test("sync overwrites unmanaged targets when conflict policy is overwrite", async () => {
+  const temp = await createTempDir();
+  const sourceRoot = path.join(temp, "source");
+  const targetRoot = path.join(temp, "target");
+  await fs.mkdir(sourceRoot, { recursive: true });
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  const config = createDefaultConfig();
+  config.agents.testagent = {
+    displayName: "Test",
+    global: {
+      root: targetRoot,
+      files: [{ source: "agent.md", target: "AGENTS.md" }]
+    }
+  };
+  await fs.writeFile(path.join(sourceRoot, "agent.md"), "hello", "utf8");
+  const targetPath = path.join(targetRoot, "AGENTS.md");
+  await fs.writeFile(targetPath, "existing", "utf8");
+
+  const result = await syncConfigs({
+    config,
+    sourceRoot,
+    mode: "global",
+    projectRoot: null,
+    linkMode: "copy",
+    dryRun: false,
+    force: false,
+    conflictPolicy: "overwrite",
+    agentFilter: "testagent"
+  });
+
+  assert.equal(result.updated.length, 1);
+  const contents = await fs.readFile(targetPath, "utf8");
+  assert.equal(contents, "hello");
+});
+
+test("sync backs up unmanaged targets when conflict policy is backup", async () => {
+  const temp = await createTempDir();
+  const sourceRoot = path.join(temp, "source");
+  const targetRoot = path.join(temp, "target");
+  await fs.mkdir(sourceRoot, { recursive: true });
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  const config = createDefaultConfig();
+  config.agents.testagent = {
+    displayName: "Test",
+    global: {
+      root: targetRoot,
+      files: [{ source: "agent.md", target: "AGENTS.md" }]
+    }
+  };
+  await fs.writeFile(path.join(sourceRoot, "agent.md"), "hello", "utf8");
+  const targetPath = path.join(targetRoot, "AGENTS.md");
+  await fs.writeFile(targetPath, "existing", "utf8");
+
+  const result = await syncConfigs({
+    config,
+    sourceRoot,
+    mode: "global",
+    projectRoot: null,
+    linkMode: "copy",
+    dryRun: false,
+    force: false,
+    conflictPolicy: "backup",
+    agentFilter: "testagent"
+  });
+
+  assert.equal(result.updated.length, 1);
+  const contents = await fs.readFile(targetPath, "utf8");
+  assert.equal(contents, "hello");
+
+  const backupRoot = path.join(sourceRoot, "backup");
+  const backupEntries = await fs.readdir(backupRoot);
+  assert.equal(backupEntries.length, 1);
+  const backupPath = path.join(backupRoot, backupEntries[0], targetPath.replace(/^[/\\]+/, ""));
+  const backupContents = await fs.readFile(backupPath, "utf8");
+  assert.equal(backupContents, "existing");
+});
+
+test("sync cancels when conflict policy is cancel", async () => {
+  const temp = await createTempDir();
+  const sourceRoot = path.join(temp, "source");
+  const targetRoot = path.join(temp, "target");
+  await fs.mkdir(sourceRoot, { recursive: true });
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  const config = createDefaultConfig();
+  config.agents.testagent = {
+    displayName: "Test",
+    global: {
+      root: targetRoot,
+      files: [{ source: "agent.md", target: "AGENTS.md" }]
+    }
+  };
+  await fs.writeFile(path.join(sourceRoot, "agent.md"), "hello", "utf8");
+  const targetPath = path.join(targetRoot, "AGENTS.md");
+  await fs.writeFile(targetPath, "existing", "utf8");
+
+  await assert.rejects(
+    syncConfigs({
+      config,
+      sourceRoot,
+      mode: "global",
+      projectRoot: null,
+      linkMode: "copy",
+      dryRun: false,
+      force: false,
+      conflictPolicy: "cancel",
+      agentFilter: "testagent"
+    }),
+    (error) => {
+      assert.ok(error instanceof AgentConfigError);
+      assert.equal(error.code, ExitCodes.Conflict);
+      return true;
+    }
   );
 });

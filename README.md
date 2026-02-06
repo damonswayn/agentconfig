@@ -39,7 +39,8 @@ agentconfig sync
 - `--dry-run` Show actions without writing.
 - `--link` Force symlink mode.
 - `--copy` Force copy mode.
-- `--force` Overwrite unmanaged targets.
+- `--force` Overwrite unmanaged targets (alias for `--on-conflict overwrite`).
+- `--on-conflict <policy>` Choose how to handle existing unmanaged targets: `overwrite`, `backup`, `skip`, `cancel`.
 - `--agent <name>` Restrict to one agent.
 
 ## Config location

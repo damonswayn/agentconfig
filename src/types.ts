@@ -1,5 +1,7 @@
 export type SyncMode = "auto" | "link" | "copy";
 
+export type ConflictPolicy = "overwrite" | "backup" | "skip" | "cancel";
+
 export interface MappingFile {
   source: string;
   target: string;

@@ -15,6 +15,7 @@ interface ParsedArgs {
   dryRun: boolean;
   mode: SyncMode | null;
   force: boolean;
+  conflictPolicy?: "overwrite" | "backup" | "skip" | "cancel";
   agent?: string;
   help: boolean;
 }
@@ -56,6 +57,14 @@ function parseArgs(argv: string[]): ParsedArgs {
       result.force = true;
       continue;
     }
+    if (arg === "--on-conflict") {
+      const value = args[i + 1];
+      if (value === "overwrite" || value === "backup" || value === "skip" || value === "cancel") {
+        result.conflictPolicy = value;
+      }
+      i += 1;
+      continue;
+    }
     if (arg === "--agent") {
       result.agent = args[i + 1];
       i += 1;
@@ -86,7 +95,8 @@ function printHelp(): void {
     "  --dry-run         Show actions without writing",
     "  --link            Force symlink mode",
     "  --copy            Force copy mode",
-    "  --force           Overwrite unmanaged targets",
+    "  --force           Overwrite unmanaged targets (alias for --on-conflict overwrite)",
+    "  --on-conflict <policy>  overwrite | backup | skip | cancel",
     "  --agent <name>    Filter to one agent",
     "  -h, --help        Show help"
   ];
@@ -137,6 +147,7 @@ async function run(): Promise<void> {
         linkMode,
         dryRun: args.dryRun,
         force: args.force,
+        conflictPolicy: args.conflictPolicy ?? (args.force ? "overwrite" : undefined),
         agentFilter: args.agent
       });
       result.warnings.forEach((warning) => console.warn(warning));

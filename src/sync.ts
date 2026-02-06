@@ -1,11 +1,19 @@
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
+import { createInterface } from "readline/promises";
 import { AgentConfigError, ExitCodes } from "./errors";
 import { copyFileOrDir, ensureDir, fileExists, hashFile, readLinkTarget } from "./filesystem";
 import { resolveFromRoot, resolvePath } from "./paths";
 import { readState, writeState } from "./state";
-import type { AgentConfigFile, ResolvedMapping, SyncMode, SyncRecord, SyncState } from "./types";
+import type {
+  AgentConfigFile,
+  ConflictPolicy,
+  ResolvedMapping,
+  SyncMode,
+  SyncRecord,
+  SyncState
+} from "./types";
 
 export interface SyncOptions {
   config: AgentConfigFile;
@@ -15,6 +23,7 @@ export interface SyncOptions {
   linkMode: SyncMode;
   dryRun: boolean;
   force: boolean;
+  conflictPolicy?: ConflictPolicy;
   agentFilter?: string;
 }
 
@@ -26,7 +35,17 @@ export interface SyncResult {
 }
 
 export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
-  const { config, sourceRoot, mode, projectRoot, linkMode, dryRun, force, agentFilter } = options;
+  const {
+    config,
+    sourceRoot,
+    mode,
+    projectRoot,
+    linkMode,
+    dryRun,
+    force,
+    conflictPolicy,
+    agentFilter
+  } = options;
   const resolvedMode = await resolveSyncMode(linkMode);
   const resolvedMappings = resolveMappings(config, sourceRoot, mode, projectRoot, resolvedMode, agentFilter);
   const warnings: string[] = [];
@@ -35,13 +54,26 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
   const existingState = await readState(stateRoot);
   const updatedMappings: ResolvedMapping[] = [];
   const skippedMappings: ResolvedMapping[] = [];
+  let conflictState: ConflictState = { policy: conflictPolicy ?? null, canAsk: true };
 
   for (const mapping of resolvedMappings) {
     const targetExists = await fileExists(mapping.target);
     if (targetExists && !force && !isManaged(mapping.target, existingState)) {
-      warnings.push(`Skipping unmanaged target: ${mapping.target}`);
-      skippedMappings.push(mapping);
-      continue;
+      const decision = await resolveConflictPolicy(mapping.target, conflictState);
+      conflictState = decision.state;
+      if (decision.action === "cancel") {
+        throw new AgentConfigError("Sync cancelled", ExitCodes.Conflict);
+      }
+      if (decision.action === "skip") {
+        warnings.push(`Skipping unmanaged target: ${mapping.target}`);
+        skippedMappings.push(mapping);
+        continue;
+      }
+      if (decision.action === "backup") {
+        if (!dryRun) {
+          await backupTarget(mapping.target, sourceRoot);
+        }
+      }
     }
 
     if (dryRun) {
@@ -71,6 +103,74 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
     skipped: skippedMappings,
     warnings
   };
+}
+
+interface ConflictState {
+  policy: ConflictPolicy | null;
+  canAsk: boolean;
+}
+
+interface ConflictDecision {
+  action: ConflictPolicy;
+  state: ConflictState;
+}
+
+async function resolveConflictPolicy(
+  target: string,
+  state: ConflictState
+): Promise<ConflictDecision> {
+  if (state.policy) {
+    return { action: state.policy, state };
+  }
+
+  if (!state.canAsk || !process.stdin.isTTY || !process.stdout.isTTY) {
+    return { action: "skip", state: { ...state, policy: "skip" } };
+  }
+
+  const choice = await promptConflictAction(target);
+  const resolved = choice.applyToAll ? choice.action : null;
+  return { action: choice.action, state: { policy: resolved, canAsk: !choice.applyToAll } };
+}
+
+async function promptConflictAction(
+  target: string
+): Promise<{ action: ConflictPolicy; applyToAll: boolean }> {
+  const promptLines = [
+    `Config already exists at ${target}. Choose action:`,
+    "1) Overwrite",
+    "2) Backup then overwrite",
+    "3) Skip",
+    "4) Cancel"
+  ];
+  process.stdout.write(`${promptLines.join("\n")}\n> `);
+
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  const choice = await readline.question("");
+  const applyToAllAnswer = await readline.question("Apply to all conflicts? (y/N) ");
+  readline.close();
+
+  const applyToAll = /^(y|yes)$/i.test(applyToAllAnswer.trim());
+  const selection = Number.parseInt(choice.trim(), 10);
+  switch (selection) {
+    case 1:
+      return { action: "overwrite", applyToAll };
+    case 2:
+      return { action: "backup", applyToAll };
+    case 4:
+      return { action: "cancel", applyToAll };
+    case 3:
+    default:
+      return { action: "skip", applyToAll };
+  }
+}
+
+async function backupTarget(target: string, sourceRoot: string): Promise<void> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupRoot = path.join(sourceRoot, "backup", timestamp);
+  const relativeTarget = target.replace(/^[/\\]+/, "");
+  const destination = path.join(backupRoot, relativeTarget);
+  await ensureDir(path.dirname(destination));
+  await copyFileOrDir(target, destination);
 }
 
 function resolveMappings(
