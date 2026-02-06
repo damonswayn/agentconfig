@@ -25,4 +25,9 @@ jobs:
       - run: npm run build --if-present
       - run: npm run lint
       - run: npm test
+      - run: npm config delete //registry.npmjs.org/:_authToken || true
+      - run: npm config delete always-auth || true
+      - run: rm -f ~/.npmrc
       - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ''
