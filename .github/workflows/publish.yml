@@ -25,6 +25,4 @@ jobs:
       - run: npm run build --if-present
       - run: npm run lint
       - run: npm test
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ""
+      - run: NODE_AUTH_TOKEN="" npm publish --access public
