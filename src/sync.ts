@@ -69,7 +69,8 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
   for (const mapping of resolvedMappings) {
     const policyAllowsOverwrite =
       conflictState.policy === "overwrite" || conflictState.policy === "backup";
-    let allowNonEmptyDir = force || policyAllowsOverwrite;
+    const managedTarget = isManaged(mapping.target, existingState);
+    let allowNonEmptyDir = force || policyAllowsOverwrite || managedTarget;
 
     const sourceExists = await fileExists(mapping.source);
     if (!sourceExists) {
@@ -82,7 +83,7 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
     }
 
     const targetExists = await fileExists(mapping.target);
-    if (targetExists && !force && !isManaged(mapping.target, existingState)) {
+    if (targetExists && !force && !managedTarget) {
       const decision = await resolveConflictPolicy(mapping.target, conflictState);
       conflictState = decision.state;
       if (decision.action === "cancel") {
@@ -290,7 +291,8 @@ async function applyMapping(
     return;
   }
 
-  await ensureDir(path.dirname(mapping.target));
+  const targetParent = path.dirname(path.resolve(mapping.target));
+  await ensureTargetParent(targetParent, mapping.target, warnings);
   try {
     const sourceStat = await fs.lstat(mapping.source);
     const existing = await getTargetInfo(mapping.target);
@@ -317,7 +319,9 @@ async function applyMapping(
     if (error instanceof AgentConfigError) {
       throw error;
     }
-    warnings.push(`Symlink failed for ${mapping.target}; falling back to copy`);
+    warnings.push(
+      `Symlink failed for ${mapping.target} (${formatError(error)}); falling back to copy`
+    );
     await applyCopyMapping(mapping, { allowNonEmptyDir });
   }
 }
@@ -329,6 +333,7 @@ async function applyCopyMapping(
   const allowNonEmptyDir = options?.allowNonEmptyDir ?? false;
   const sourceStat = await fs.lstat(mapping.source);
   const existing = await getTargetInfo(mapping.target);
+  const targetParent = path.dirname(path.resolve(mapping.target));
   if (sourceStat.isDirectory()) {
     if (existing && !existing.isDirectory) {
       await fs.unlink(mapping.target);
@@ -342,6 +347,7 @@ async function applyCopyMapping(
         );
       }
     }
+    await ensureTargetParent(targetParent, mapping.target);
     await copyFileOrDir(mapping.source, mapping.target);
     return;
   }
@@ -358,7 +364,22 @@ async function applyCopyMapping(
     await fs.unlink(mapping.target);
   }
 
+  await ensureTargetParent(targetParent, mapping.target);
   await copyFileOrDir(mapping.source, mapping.target);
+}
+
+async function ensureTargetParent(
+  targetParent: string,
+  target: string,
+  warnings?: string[]
+): Promise<void> {
+  const parentExists = await fileExists(targetParent);
+  if (!parentExists) {
+    await ensureDir(targetParent);
+    warnings?.push(`Created target parent directory: ${targetParent} (for ${target})`);
+    return;
+  }
+  await ensureDir(targetParent);
 }
 
 async function getTargetInfo(
@@ -398,6 +419,18 @@ async function removeDirectory(target: string, allowNonEmptyDir: boolean): Promi
   }
   await fs.rm(target, { recursive: true, force: true });
   return true;
+}
+
+function formatError(error: unknown): string {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = String((error as { code?: unknown }).code);
+    const message = error instanceof Error ? error.message : String(error);
+    return `${code}: ${message}`;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
 
 function isManaged(target: string, state: SyncState | null): boolean {

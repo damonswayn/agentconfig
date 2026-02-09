@@ -1,7 +1,7 @@
-import fs from "fs/promises";
 import { AgentConfigError, ExitCodes } from "./errors";
+import { initConfig } from "./init";
 import type { SyncMode } from "./types";
-import { getConfigPath, readConfig, writeConfig } from "./config";
+import { readConfig } from "./config";
 import { createDefaultConfig } from "./templates";
 import { getStatus } from "./status";
 import { syncConfigs } from "./sync";
@@ -129,16 +129,17 @@ async function run(): Promise<void> {
 
   switch (args.command) {
     case "init": {
-      const configPath = getConfigPath(sourceRoot);
-      const exists = await fs
-        .access(configPath)
-        .then(() => true)
-        .catch(() => false);
-      if (exists) {
-        throw new AgentConfigError(`Config already exists: ${configPath}`, ExitCodes.Conflict);
+      const result = await initConfig(sourceRoot, {
+        config: createDefaultConfig(),
+        conflictPolicy: args.conflictPolicy,
+        force: args.force
+      });
+      if (result.action === "skipped") {
+        console.log(`Skipped ${result.configPath}`);
+        return;
       }
-      await writeConfig(sourceRoot, createDefaultConfig());
-      console.log(`Created ${configPath}`);
+      const verb = result.action === "overwritten" ? "Overwrote" : "Created";
+      console.log(`${verb} ${result.configPath}`);
       return;
     }
     case "sync": {

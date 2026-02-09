@@ -27,7 +27,8 @@ agentconfig sync
 
 ## Commands
 
-- `agentconfig init` Create `agentconfig.yml` in the source root.
+- `agentconfig init` Create `agentconfig.yml` in the source root and create any missing source directories.
+  - Use `--force` or `--on-conflict overwrite|backup|skip|cancel` to handle an existing config file.
 - `agentconfig sync` Sync configs to agent targets.
 - `agentconfig status` Show drift status based on last sync.
 - `agentconfig doctor` Validate config structure.

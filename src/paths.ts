@@ -14,7 +14,12 @@ export function expandHome(inputPath: string): string {
 export function expandEnv(inputPath: string, env: NodeJS.ProcessEnv): string {
   const resolved = inputPath.replace(
     /\$\{([A-Z0-9_]+)(:-([^}]*))?\}/gi,
-    (_match: string, varName: string, _fallbackGroup: string | undefined, fallback: string | undefined): string => {
+    (
+      _match: string,
+      varName: string,
+      _fallbackGroup: string | undefined,
+      fallback: string | undefined
+    ): string => {
       const value = env[varName];
       if (value && value.length > 0) {
         return value;
@@ -38,7 +43,7 @@ export function resolvePath(inputPath: string, env: NodeJS.ProcessEnv): string {
 
 export function resolveFromRoot(root: string, relativePath: string): string {
   if (path.isAbsolute(relativePath)) {
-    return relativePath;
+    return path.resolve(relativePath);
   }
-  return path.join(root, relativePath);
+  return path.resolve(path.join(root, relativePath));
 }
