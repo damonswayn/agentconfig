@@ -17,6 +17,7 @@ interface ParsedArgs {
   force: boolean;
   conflictPolicy?: "overwrite" | "backup" | "skip" | "cancel";
   agent?: string;
+  strict: boolean;
   help: boolean;
 }
 
@@ -27,6 +28,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     dryRun: false,
     mode: null,
     force: false,
+    strict: false,
     help: false
   };
 
@@ -70,6 +72,10 @@ function parseArgs(argv: string[]): ParsedArgs {
       i += 1;
       continue;
     }
+    if (arg === "--strict") {
+      result.strict = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       result.help = true;
       continue;
@@ -98,6 +104,7 @@ function printHelp(): void {
     "  --force           Overwrite unmanaged targets (alias for --on-conflict overwrite)",
     "  --on-conflict <policy>  overwrite | backup | skip | cancel",
     "  --agent <name>    Filter to one agent",
+    "  --strict          Error on missing source files (default: skip)",
     "  -h, --help        Show help"
   ];
   console.log(lines.join("\n"));
@@ -148,7 +155,8 @@ async function run(): Promise<void> {
         dryRun: args.dryRun,
         force: args.force,
         conflictPolicy: args.conflictPolicy ?? (args.force ? "overwrite" : undefined),
-        agentFilter: args.agent
+        agentFilter: args.agent,
+        strict: args.strict
       });
       result.warnings.forEach((warning) => console.warn(warning));
       console.log(`Planned: ${result.planned.length}`);

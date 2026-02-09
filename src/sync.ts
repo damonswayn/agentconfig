@@ -25,6 +25,7 @@ export interface SyncOptions {
   force: boolean;
   conflictPolicy?: ConflictPolicy;
   agentFilter?: string;
+  strict?: boolean;
 }
 
 export interface SyncResult {
@@ -44,8 +45,10 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
     dryRun,
     force,
     conflictPolicy,
-    agentFilter
+    agentFilter,
+    strict
   } = options;
+  const strictMode = strict ?? false;
   const resolvedMode = await resolveSyncMode(linkMode);
   const resolvedMappings = resolveMappings(
     config,
@@ -65,6 +68,17 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
 
   for (const mapping of resolvedMappings) {
     let allowNonEmptyDir = false;
+
+    const sourceExists = await fileExists(mapping.source);
+    if (!sourceExists) {
+      if (strictMode) {
+        throw new AgentConfigError(`Missing source: ${mapping.source}`, ExitCodes.Validation);
+      }
+      warnings.push(`Skipping missing source: ${mapping.source}`);
+      skippedMappings.push(mapping);
+      continue;
+    }
+
     const targetExists = await fileExists(mapping.target);
     if (targetExists && !force && !isManaged(mapping.target, existingState)) {
       const decision = await resolveConflictPolicy(mapping.target, conflictState);
@@ -268,10 +282,6 @@ async function applyMapping(
   options?: { allowNonEmptyDir: boolean }
 ): Promise<void> {
   const allowNonEmptyDir = options?.allowNonEmptyDir ?? false;
-  const sourceExists = await fileExists(mapping.source);
-  if (!sourceExists) {
-    throw new AgentConfigError(`Missing source: ${mapping.source}`, ExitCodes.Validation);
-  }
 
   if (mapping.mode === "copy") {
     await applyCopyMapping(mapping, { allowNonEmptyDir });

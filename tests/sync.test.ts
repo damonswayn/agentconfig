@@ -882,6 +882,76 @@ void test("sync cancels when conflict policy is cancel", async () => {
   );
 });
 
+void test("sync skips missing source files with warning", async () => {
+  const temp = await createTempDir();
+  const sourceRoot = path.join(temp, "source");
+  const targetRoot = path.join(temp, "target");
+  await fs.mkdir(sourceRoot, { recursive: true });
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  const config = createDefaultConfig();
+  config.agents.testagent = {
+    displayName: "Test",
+    global: {
+      root: targetRoot,
+      files: [{ source: "missing.md", target: "AGENTS.md" }]
+    }
+  };
+
+  const result = await syncConfigs({
+    config,
+    sourceRoot,
+    mode: "global",
+    projectRoot: null,
+    linkMode: "copy",
+    dryRun: false,
+    force: true,
+    agentFilter: "testagent"
+  });
+
+  assert.equal(result.updated.length, 0);
+  assert.equal(result.skipped.length, 1);
+  assert.ok(result.warnings.some((warning) => warning.includes("Skipping missing source")));
+  await assert.rejects(fs.lstat(path.join(targetRoot, "AGENTS.md")), /ENOENT/);
+});
+
+void test("sync errors on missing source when strict is enabled", async () => {
+  const temp = await createTempDir();
+  const sourceRoot = path.join(temp, "source");
+  const targetRoot = path.join(temp, "target");
+  await fs.mkdir(sourceRoot, { recursive: true });
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  const config = createDefaultConfig();
+  config.agents.testagent = {
+    displayName: "Test",
+    global: {
+      root: targetRoot,
+      files: [{ source: "missing.md", target: "AGENTS.md" }]
+    }
+  };
+
+  await assert.rejects(
+    syncConfigs({
+      config,
+      sourceRoot,
+      mode: "global",
+      projectRoot: null,
+      linkMode: "copy",
+      dryRun: false,
+      force: true,
+      strict: true,
+      agentFilter: "testagent"
+    }),
+    (error) => {
+      assert.ok(error instanceof AgentConfigError);
+      assert.equal(error.code, ExitCodes.Validation);
+      assert.ok(error.message.includes("Missing source"));
+      return true;
+    }
+  );
+});
+
 void test("sync copies default mappings for all agents", async () => {
   const { sourceRoot, globalRoot, projectRoot, config } = await setupDefaultMappingsFixture();
 
