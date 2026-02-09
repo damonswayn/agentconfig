@@ -424,13 +424,30 @@ async function removeDirectory(target: string, allowNonEmptyDir: boolean): Promi
 function formatError(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error) {
     const code = String((error as { code?: unknown }).code);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : stringifyErrorPayload(error);
     return `${code}: ${message}`;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return String(error);
+  return stringifyErrorPayload(error);
+}
+
+function stringifyErrorPayload(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (value === null || value === undefined) {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "Unknown error";
+  }
 }
 
 function isManaged(target: string, state: SyncState | null): boolean {
