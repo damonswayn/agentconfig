@@ -67,7 +67,9 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
   let conflictState: ConflictState = { policy: conflictPolicy ?? null, canAsk: true };
 
   for (const mapping of resolvedMappings) {
-    let allowNonEmptyDir = force;
+    const policyAllowsOverwrite =
+      conflictState.policy === "overwrite" || conflictState.policy === "backup";
+    let allowNonEmptyDir = force || policyAllowsOverwrite;
 
     const sourceExists = await fileExists(mapping.source);
     if (!sourceExists) {

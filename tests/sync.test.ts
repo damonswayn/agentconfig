@@ -683,6 +683,56 @@ void test("sync overwrites non-empty directory targets when conflict policy is o
   assert.equal(stat.isSymbolicLink(), true);
 });
 
+void test("sync overwrites non-empty directory targets when conflict policy is applied to all", async () => {
+  const temp = await createTempDir();
+  const sourceRoot = path.join(temp, "source");
+  const targetRoot = path.join(temp, "target");
+  await fs.mkdir(sourceRoot, { recursive: true });
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  const config = createDefaultConfig();
+  config.agents.testagent = {
+    displayName: "Test",
+    global: {
+      root: targetRoot,
+      files: [
+        { source: "agent.md", target: "AGENTS.md" },
+        { source: "skills/", target: "skills/" }
+      ]
+    }
+  };
+  await fs.mkdir(path.join(sourceRoot, "skills"), { recursive: true });
+  await fs.writeFile(path.join(sourceRoot, "agent.md"), "hello", "utf8");
+  await fs.writeFile(path.join(sourceRoot, "skills", "skill.txt"), "skill", "utf8");
+
+  const targetFileDir = path.join(targetRoot, "AGENTS.md");
+  await fs.mkdir(targetFileDir, { recursive: true });
+  await fs.writeFile(path.join(targetFileDir, "nested.txt"), "data", "utf8");
+  const targetSkillsDir = path.join(targetRoot, "skills");
+  await fs.mkdir(targetSkillsDir, { recursive: true });
+  await fs.writeFile(path.join(targetSkillsDir, "nested.txt"), "data", "utf8");
+
+  const result = await syncConfigs({
+    config,
+    sourceRoot,
+    mode: "global",
+    projectRoot: null,
+    linkMode: "link",
+    dryRun: false,
+    force: false,
+    conflictPolicy: "overwrite",
+    agentFilter: "testagent"
+  });
+
+  assert.equal(result.updated.length, 2);
+  const agentPath = path.join(targetRoot, "AGENTS.md");
+  const agentStat = await fs.lstat(agentPath);
+  assert.equal(agentStat.isSymbolicLink(), true);
+  const skillsPath = path.join(targetRoot, "skills");
+  const skillsStat = await fs.lstat(skillsPath);
+  assert.equal(skillsStat.isDirectory(), true);
+});
+
 void test("sync backs up non-empty directory targets when conflict policy is backup", async () => {
   const temp = await createTempDir();
   const sourceRoot = path.join(temp, "source");
