@@ -606,7 +606,7 @@ void test("sync includes profile mappings", async () => {
   assert.equal(contents, "profile");
 });
 
-void test("sync refuses to replace non-empty directory targets", async () => {
+void test("sync overwrites non-empty directory targets when force is enabled", async () => {
   const temp = await createTempDir();
   const sourceRoot = path.join(temp, "source");
   const targetRoot = path.join(temp, "target");
@@ -627,19 +627,21 @@ void test("sync refuses to replace non-empty directory targets", async () => {
   await fs.mkdir(targetDir, { recursive: true });
   await fs.writeFile(path.join(targetDir, "nested.txt"), "data", "utf8");
 
-  await assert.rejects(
-    syncConfigs({
-      config,
-      sourceRoot,
-      mode: "global",
-      projectRoot: null,
-      linkMode: "link",
-      dryRun: false,
-      force: true,
-      agentFilter: "testagent"
-    }),
-    /Refusing to replace non-empty directory/
-  );
+  const result = await syncConfigs({
+    config,
+    sourceRoot,
+    mode: "global",
+    projectRoot: null,
+    linkMode: "link",
+    dryRun: false,
+    force: true,
+    agentFilter: "testagent"
+  });
+
+  assert.equal(result.updated.length, 1);
+  const targetPath = path.join(targetRoot, "AGENTS.md");
+  const stat = await fs.lstat(targetPath);
+  assert.equal(stat.isSymbolicLink(), true);
 });
 
 void test("sync overwrites non-empty directory targets when conflict policy is overwrite", async () => {

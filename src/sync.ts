@@ -67,7 +67,7 @@ export async function syncConfigs(options: SyncOptions): Promise<SyncResult> {
   let conflictState: ConflictState = { policy: conflictPolicy ?? null, canAsk: true };
 
   for (const mapping of resolvedMappings) {
-    let allowNonEmptyDir = false;
+    let allowNonEmptyDir = force;
 
     const sourceExists = await fileExists(mapping.source);
     if (!sourceExists) {
