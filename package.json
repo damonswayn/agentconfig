@@ -1,6 +1,6 @@
 {
   "name": "@shruubi/agentconfig",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Sync a single agent config source to multiple coding agents",
   "license": "MIT",
   "repository": {
